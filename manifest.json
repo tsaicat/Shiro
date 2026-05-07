@@ -1,0 +1,24 @@
+{
+  "name": "Shiro's Task Garden",
+  "short_name": "Shiro",
+  "description": "A beautiful task manager with Shiro the cat",
+  "start_url": "./shiro-pwa-v1.0.html",
+  "display": "standalone",
+  "background_color": "#060e1f",
+  "theme_color": "#0a1628",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "shiro-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "shiro-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
