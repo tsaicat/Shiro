@@ -618,6 +618,63 @@
   .main-content::-webkit-scrollbar-track { background: transparent; }
   .main-content::-webkit-scrollbar-thumb { background: rgba(100,160,255,0.2); border-radius: 3px; }
 
+  /* ALARM CHOICE POPUP */
+  .alarm-choice-card {
+    background: rgba(10,22,50,0.97);
+    border: 1px solid rgba(244,200,66,0.4);
+    border-radius: 22px;
+    padding: 28px 22px 22px;
+    text-align: center;
+    width: 82vw; max-width: 320px;
+    box-shadow: 0 0 50px rgba(244,200,66,0.15);
+  }
+  .alarm-choice-title {
+    font-family: var(--font-serif);
+    font-size: 18px; color: var(--lantern-gold);
+    margin-bottom: 6px;
+  }
+  .alarm-choice-task {
+    font-size: 14px; color: var(--text-main);
+    margin-bottom: 4px; line-height: 1.4;
+    font-weight: 700;
+  }
+  .alarm-choice-time {
+    font-size: 12px; color: var(--cherry);
+    margin-bottom: 16px;
+  }
+  .alarm-choice-hint {
+    font-size: 11px; color: var(--text-dim);
+    margin-bottom: 14px; letter-spacing: 0.05em;
+  }
+  .alarm-choice-btn {
+    display: block; width: 100%;
+    padding: 12px; margin-bottom: 8px;
+    border-radius: 12px;
+    font-family: var(--font-sans);
+    font-size: 14px; font-weight: 700;
+    cursor: pointer; text-decoration: none;
+    transition: all 0.15s;
+    border: 1px solid;
+  }
+  .alarm-choice-btn:active { transform: scale(0.97); }
+  .alarm-choice-btn.gcal {
+    background: rgba(66,133,244,0.15);
+    border-color: rgba(66,133,244,0.5);
+    color: #7ab3ff;
+  }
+  .alarm-choice-btn.clock {
+    background: rgba(244,200,66,0.12);
+    border-color: rgba(244,200,66,0.4);
+    color: var(--lantern-gold);
+  }
+  .alarm-choice-btn.cancel {
+    background: transparent;
+    border-color: rgba(100,160,255,0.15);
+    color: var(--text-dim);
+    font-weight: 400;
+    margin-bottom: 0;
+  }
+
   /* SCRATCH ANIMATIONS */
   @keyframes scratchLine {
     0%   { stroke-dashoffset: 100; opacity: 1; }
@@ -1874,59 +1931,82 @@ function toggleAlarmInput(id) {
 }
 
 // =====================
-// NOTIFICATIONS
+// ALARM — Google Calendar + Clock deep link
 // =====================
-let notifPermission = Notification.permission;
-
-async function requestNotifPermission() {
-  if (notifPermission === 'granted') return true;
-  if (notifPermission === 'denied') return false;
-  const result = await Notification.requestPermission();
-  notifPermission = result;
-  return result === 'granted';
-}
-
-function sendNotification(title, body) {
-  if (notifPermission !== 'granted') return;
-  const notif = new Notification(title, {
-    body,
-    icon: 'shiro-icon.png',
-    badge: 'shiro-icon.png',
-    vibrate: [200, 100, 200],
-    tag: 'shiro-alarm',
-    renotify: true,
-    requireInteraction: true  // stays on screen until dismissed
-  });
-  // Clicking the notification focuses the app
-  notif.onclick = () => { window.focus(); notif.close(); };
-}
 
 function setAlarm(id) {
   const input = document.getElementById(`alarm-input-${id}`);
   const task = tasks.find(t => t.id === id);
   if (!task || !input || !input.value) return;
 
-  const alarmTime = new Date(input.value).getTime();
+  const alarmTime = new Date(input.value);
   const now = Date.now();
-  if (alarmTime <= now) { showToast('Please pick a future time!'); return; }
+  if (alarmTime.getTime() <= now) { showToast('Please pick a future time!'); return; }
 
-  // Request notification permission when alarm is set
-  requestNotifPermission().then(granted => {
-    if (!granted) {
-      showToast('⚠️ Enable notifications for real alerts!');
-    }
+  // Save alarm time for display
+  task.alarm = alarmTime.getTime();
+  saveState();
+  renderTasks();
+
+  // Build Google Calendar URL
+  // Format: YYYYMMDDTHHmmss
+  function gcalDate(d) {
+    return d.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  }
+  const start = gcalDate(alarmTime);
+  // 15-minute event
+  const end = gcalDate(new Date(alarmTime.getTime() + 15 * 60000));
+
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE`
+    + `&text=${encodeURIComponent('🐱 Shiro Reminder: ' + task.title)}`
+    + `&dates=${start}/${end}`
+    + `&details=${encodeURIComponent('Task from Shiro\'s Task Garden 🌸\n\n' + (task.note || ''))}`
+    + `&sf=true&output=xml`;
+
+  // Show choice popup
+  showAlarmChoice(task.title, alarmTime, gcalUrl);
+}
+
+function showAlarmChoice(title, alarmTime, gcalUrl) {
+  const timeStr = alarmTime.toLocaleString([], {
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit'
   });
 
-  clearAlarm(id);
-  task.alarm = alarmTime;
-  saveState();
+  // Remove any existing popup
+  const old = document.getElementById('alarm-choice-popup');
+  if (old) old.remove();
 
-  const delay = alarmTime - now;
-  alarmTimers[id] = setTimeout(() => fireAlarm(id), delay);
+  const popup = document.createElement('div');
+  popup.id = 'alarm-choice-popup';
+  popup.innerHTML = `
+    <div class="alarm-choice-card">
+      <div style="font-size:28px;margin-bottom:8px;">🔔</div>
+      <div class="alarm-choice-title">Set Reminder</div>
+      <div class="alarm-choice-task">${escHtml(title)}</div>
+      <div class="alarm-choice-time">${timeStr}</div>
+      <div class="alarm-choice-hint">Choose where to set your reminder:</div>
+      <a class="alarm-choice-btn gcal" href="${gcalUrl}" target="_blank" onclick="closeAlarmChoice()">
+        📅 Google Calendar
+      </a>
+      <a class="alarm-choice-btn clock" href="intent://alarm#Intent;scheme=android-app;package=com.google.android.deskclock;end" target="_blank" onclick="closeAlarmChoice()">
+        ⏰ Clock App
+      </a>
+      <button class="alarm-choice-btn cancel" onclick="closeAlarmChoice()">Cancel</button>
+    </div>
+  `;
+  popup.style.cssText = `
+    position:fixed;inset:0;z-index:200;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.65);backdrop-filter:blur(8px);
+  `;
+  document.body.appendChild(popup);
+}
 
-  renderTasks();
-  const timeStr = new Date(alarmTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  showToast(`🔔 Reminder set for ${timeStr}!`);
+function closeAlarmChoice() {
+  const p = document.getElementById('alarm-choice-popup');
+  if (p) p.remove();
+  showToast('Reminder saved! Check your Calendar 📅');
 }
 
 function clearAlarm(id) {
@@ -1936,23 +2016,7 @@ function clearAlarm(id) {
 }
 
 function restoreAlarms() {
-  const now = Date.now();
-  tasks.forEach(task => {
-    if (task.alarm) {
-      const delay = task.alarm - now;
-      if (delay > 0) {
-        alarmTimers[task.id] = setTimeout(() => fireAlarm(task.id), delay);
-      } else {
-        // Alarm was missed while app was closed — notify immediately
-        task.alarm = null;
-        sendNotification(
-          `🐱 Shiro says: You missed this!`,
-          task.title
-        );
-        saveState();
-      }
-    }
-  });
+  // No JS timers needed — alarms live in Google Calendar now
 }
 
 function clearAllAlarms() {
@@ -1961,16 +2025,9 @@ function clearAllAlarms() {
 }
 
 function fireAlarm(id) {
+  // Kept for compatibility but alarms now handled by Calendar
   const task = tasks.find(t => t.id === id);
   if (!task) return;
-
-  // Real system notification
-  sendNotification(
-    `🔔 Shiro's Reminder! 🌸`,
-    `Nyaa~ Don't forget: ${task.title}`
-  );
-
-  // In-app popup
   document.getElementById('alarm-popup-task').textContent = task.title;
   document.getElementById('alarm-popup').classList.add('show');
   setEmotion('curious', 'main');
