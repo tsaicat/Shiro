@@ -1873,6 +1873,34 @@ function toggleAlarmInput(id) {
   if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
 }
 
+// =====================
+// NOTIFICATIONS
+// =====================
+let notifPermission = Notification.permission;
+
+async function requestNotifPermission() {
+  if (notifPermission === 'granted') return true;
+  if (notifPermission === 'denied') return false;
+  const result = await Notification.requestPermission();
+  notifPermission = result;
+  return result === 'granted';
+}
+
+function sendNotification(title, body) {
+  if (notifPermission !== 'granted') return;
+  const notif = new Notification(title, {
+    body,
+    icon: 'shiro-icon.png',
+    badge: 'shiro-icon.png',
+    vibrate: [200, 100, 200],
+    tag: 'shiro-alarm',
+    renotify: true,
+    requireInteraction: true  // stays on screen until dismissed
+  });
+  // Clicking the notification focuses the app
+  notif.onclick = () => { window.focus(); notif.close(); };
+}
+
 function setAlarm(id) {
   const input = document.getElementById(`alarm-input-${id}`);
   const task = tasks.find(t => t.id === id);
@@ -1882,6 +1910,13 @@ function setAlarm(id) {
   const now = Date.now();
   if (alarmTime <= now) { showToast('Please pick a future time!'); return; }
 
+  // Request notification permission when alarm is set
+  requestNotifPermission().then(granted => {
+    if (!granted) {
+      showToast('⚠️ Enable notifications for real alerts!');
+    }
+  });
+
   clearAlarm(id);
   task.alarm = alarmTime;
   saveState();
@@ -1890,7 +1925,8 @@ function setAlarm(id) {
   alarmTimers[id] = setTimeout(() => fireAlarm(id), delay);
 
   renderTasks();
-  showToast('Reminder set! 🔔');
+  const timeStr = new Date(alarmTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  showToast(`🔔 Reminder set for ${timeStr}!`);
 }
 
 function clearAlarm(id) {
@@ -1907,7 +1943,13 @@ function restoreAlarms() {
       if (delay > 0) {
         alarmTimers[task.id] = setTimeout(() => fireAlarm(task.id), delay);
       } else {
+        // Alarm was missed while app was closed — notify immediately
         task.alarm = null;
+        sendNotification(
+          `🐱 Shiro says: You missed this!`,
+          task.title
+        );
+        saveState();
       }
     }
   });
@@ -1921,6 +1963,14 @@ function clearAllAlarms() {
 function fireAlarm(id) {
   const task = tasks.find(t => t.id === id);
   if (!task) return;
+
+  // Real system notification
+  sendNotification(
+    `🔔 Shiro's Reminder! 🌸`,
+    `Nyaa~ Don't forget: ${task.title}`
+  );
+
+  // In-app popup
   document.getElementById('alarm-popup-task').textContent = task.title;
   document.getElementById('alarm-popup').classList.add('show');
   setEmotion('curious', 'main');
@@ -2017,6 +2067,12 @@ function showToast(msg) {
 // =====================
 // BOOT
 // =====================
+
+// Register service worker for background support
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 initDashboard();
 </script>
 </body>
